@@ -9,7 +9,6 @@ async function autocomplete(inp) {
 
     inp.addEventListener('input', async function (e) {
         let suggestConteiner;
-        let suggestItem;
         let val = this.value;
         if (!val) { return false; }
 
