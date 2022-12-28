@@ -1,11 +1,15 @@
 async function autocomplete(inp) {
-    var localStorage = window.localStorage;
+    var localStorage = {};
     var historyListElement = document.getElementById('historyList');
     var countryInfoElement = document.getElementById('countryInfo');
     let baseUrl = 'https://restcountries.com/v3.1/name/';
+    let isStorageAvailable = storageAvailable('localStorage');
 
-    updateHistory(historyListElement);
-    window.addEventListener('storage', () => updateHistory(historyListElement));
+    if (isStorageAvailable) {
+        localStorage = window.localStorage;
+        updateHistory(historyListElement);
+        window.addEventListener('storage', () => updateHistory(historyListElement));
+    }
 
     inp.addEventListener('input', async function (e) {
         let suggestConteiner;
@@ -19,14 +23,14 @@ async function autocomplete(inp) {
         this.parentNode.appendChild(suggestConteiner);
         let counter = 0;
 
-        let countries = await getCountriesNames(val);
         let suggestions = getSuggestFromLocalStorage(val);
-
         for (let i = 0; i < suggestions.length; i++) {
             appendSuggest(suggestConteiner, true, suggestions[i]);
             counter++;
         }
 
+        let countries = await fetchCountriesNames(val);
+        if (countries == null) return;
         for (let i = 0; i < countries.length; i++) {
             if (countries[i].toUpperCase().includes(val.toUpperCase())
                 && !suggestions.includes(countries[i])
@@ -37,38 +41,69 @@ async function autocomplete(inp) {
         }
     });
 
-    async function getCountriesNames(searchInput) {
-        const response = await fetch(baseUrl + searchInput, {
+    async function fetchCountries(query) {
+        const response = await fetch(baseUrl + query, {
             method: 'GET',
             headers: {
                 'Content-Type': 'application/json',
             },
             redirect: 'follow',
-        });
+        })
+            .then((response) => {
+                if (!response.ok) {
+                    throw Error(response.statusText);
+                }
+                return response;
+            })
+            .catch((error) => { console.log(error); return null; });
+
+        if (response == null)
+            return null;
+
         let jsonResponse = await response.json();
-        jsonResponse = jsonResponse.map(item => item.name.common);
+        return jsonResponse;
+    }
+
+    async function fetchCountriesNames(query) {
+        let jsonResponse = await fetchCountries(query);
+        if (jsonResponse !== null)
+            jsonResponse = jsonResponse.map(item => item.name.common);
         return jsonResponse;
     }
 
     async function fetchCountryInfo(country) {
-        const response = await fetch(baseUrl + country, {
-            method: 'GET',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            redirect: 'follow',
-        });
-        let jsonResponse = await response.json();
-        return jsonResponse;
+        let jsonResponse = await fetchCountries(country);
+        if (jsonResponse === null)
+            return jsonResponse;
+        return jsonResponse[0];
     }
 
     function updateLocalStorage(country) {
-        let countryKey = findCountryKey(country);
+        if (!isStorageAvailable) return;
+        let countryKey = findCountryKeyInStorage(country);
         if (countryKey) localStorage.removeItem(countryKey);
-        localStorage.setItem(Date.now(), country);
+        try {
+            localStorage.setItem(Date.now(), country);
+        }
+        catch (e) {
+            console.error('An error occurred while setting new item in localStorage.');
+        }
     }
 
-    function findCountryKey(country) {
+    function storageAvailable(type) {
+        try {
+            var storage = window[type],
+                x = '__storage_test__';
+            storage.setItem(x, x);
+            storage.removeItem(x);
+            return true;
+        }
+        catch (e) {
+            return false;
+        }
+    }
+
+    function findCountryKeyInStorage(country) {
         let index = 0;
         while (index < localStorage.length) {
             let key = localStorage.key(index);
@@ -85,6 +120,7 @@ async function autocomplete(inp) {
         // https://developer.mozilla.org/ru/docs/Web/API/Storage/key
         let result = [];
         let keys = [];
+        if (!isStorageAvailable) return result;
         for (let index = 0; index < localStorage.length; index++)
             keys.push(localStorage.key(index));
 
@@ -101,6 +137,7 @@ async function autocomplete(inp) {
     }
 
     function updateHistory(container) {
+        if (!isStorageAvailable) return;
         if (localStorage.length == 0) return;
         let keys = [];
         for (let keyIndex = 0; keyIndex < localStorage.length; keyIndex++)
@@ -126,32 +163,33 @@ async function autocomplete(inp) {
     }
 
     function appendSuggest(container, isFromStorage, content) {
-        let inserter = document.createElement('div');
-        inserter.classList.add('search__suggest-item');
-        if (isFromStorage) inserter.innerHTML += `<strong>${content}</strong>`;
-        else inserter.innerHTML += content;
+        let host = document.createElement('div');
+        host.classList.add('search__suggest-item');
+        if (isFromStorage) host.innerHTML += `<strong>${content}</strong>`;
+        else host.innerHTML += content;
 
-        inserter.addEventListener('click', function (e) {
+        host.addEventListener('click', function (e) {
             inp.value = content;
             updateLocalStorage(content);
             updateHistory(historyListElement);
             showCountryInfo(content);
             closeAllLists();
         });
-        container.appendChild(inserter);
+        container.appendChild(host);
     }
 
     async function showCountryInfo(country) {
         let info = await fetchCountryInfo(country);
+        if (info == null) return;
         countryInfoElement.innerHTML = '';
-        countryInfoElement.innerHTML += `<div>Название: ${info[0].name.common}<\div>`;
-        countryInfoElement.innerHTML += `<div>Столица: ${info[0].capital[0]}<\div>`;
-        countryInfoElement.innerHTML += `<div>Регион: ${info[0].region}<\div>`;
-        countryInfoElement.innerHTML += `<div>Площадь: ${info[0].area} кв. км.<\div>`;
-        countryInfoElement.innerHTML += `<div>Флаг: ${info[0].flag}<\div>`;
-        countryInfoElement.innerHTML += `<div>Численность: ${info[0].population}<\div>`;
+        countryInfoElement.innerHTML += `<div>Название: ${info.name.common}<\div>`;
+        countryInfoElement.innerHTML += `<div>Столица: ${info.capital[0]}<\div>`;
+        countryInfoElement.innerHTML += `<div>Регион: ${info.region}<\div>`;
+        countryInfoElement.innerHTML += `<div>Площадь: ${info.area} кв. км.<\div>`;
+        countryInfoElement.innerHTML += `<div>Флаг: ${info.flag}<\div>`;
+        countryInfoElement.innerHTML += `<div>Численность: ${info.population}<\div>`;
         countryInfoElement.innerHTML += `<div>Герб:<\div>`;
-        countryInfoElement.innerHTML += `<img src='${info[0].coatOfArms.svg}' alt='Герб'></img>`;
+        countryInfoElement.innerHTML += `<img src='${info.coatOfArms.svg}' alt='Герб'></img>`;
     }
 
     function closeAllLists(element) {
