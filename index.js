@@ -11,7 +11,7 @@ async function autocomplete(inp) {
         window.addEventListener('storage', () => updateHistory(historyListElement));
     }
 
-    inp.addEventListener('input', async function (e) {
+    async function handleInput(e) {
         let suggestConteiner;
         let val = this.value;
         if (!val) { return false; }
@@ -28,8 +28,14 @@ async function autocomplete(inp) {
             appendSuggest(suggestConteiner, true, suggestions[i]);
             counter++;
         }
+        let countries = [];
+        try {
+            countries = await fetchCountriesNames(val);
+        } catch (error) {
+            countryInfoElement.innerHTML = 'Error while fetching country suggests last time. Try again. Sorry...';
+            return;
+        }
 
-        let countries = await fetchCountriesNames(val);
         if (countries == null) return;
         for (let i = 0; i < countries.length; i++) {
             if (countries[i].toUpperCase().includes(val.toUpperCase())
@@ -39,7 +45,9 @@ async function autocomplete(inp) {
                 counter++;
             }
         }
-    });
+    }
+
+    inp.addEventListener('input', _.debounce(handleInput, 250));
 
     async function fetchCountries(query) {
         const response = await fetch(baseUrl + query, {
@@ -48,20 +56,13 @@ async function autocomplete(inp) {
                 'Content-Type': 'application/json',
             },
             redirect: 'follow',
-        })
-            .then((response) => {
-                if (!response.ok) {
-                    throw Error(response.statusText);
-                }
-                return response;
-            })
-            .catch((error) => { console.log(error); return null; });
+        });
 
-        if (response == null)
-            return null;
+        if (response.ok) {
+            return response.json();
+        }
 
-        let jsonResponse = await response.json();
-        return jsonResponse;
+        throw new Error("The error has occured while fetching the data");
     }
 
     async function fetchCountriesNames(query) {
@@ -179,7 +180,14 @@ async function autocomplete(inp) {
     }
 
     async function showCountryInfo(country) {
-        let info = await fetchCountryInfo(country);
+        let info = {};
+        try {
+            info = await fetchCountryInfo(country);
+        } catch (error) {
+            countryInfoElement.innerHTML = 'Error while fetching country info. Try again. Sorry...';
+            return;
+        }
+
         if (info == null) return;
         countryInfoElement.innerHTML = '';
         countryInfoElement.innerHTML += `<div>Название: ${info.name.common}<\div>`;
